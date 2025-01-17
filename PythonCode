@@ -1,0 +1,275 @@
+import sympy as sp
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Define the symbol for time and displacement
+t = sp.Symbol('t')  # Symbolic representation of time, t
+s = sp.Symbol('s')  # Symbolic representation of displacement, s
+
+# Function to get the position functions from the user or handle acceleration scenarios
+def get_motion_data():
+    mode = input("Do you want to input a position function, acceleration scenario, v-s/a-s scenario, or velocity function v(t)? (position/acceleration/vs-as/velocity): ").strip().lower()
+    intervals = []  # Initialize a list to store the intervals and their respective functions
+
+    if mode == 'position':
+        # User inputs position functions for specific time intervals
+        num_intervals = int(input("Enter the number of time intervals: "))
+        for i in range(num_intervals):
+            equation_str = input(f"Enter the position function s(t) for interval {i + 1} (e.g., 3*t**2 + 2*t + 1): ")
+            start_time = float(input(f"Enter the start time for interval {i + 1}: "))
+            end_time = float(input(f"Enter the end time for interval {i + 1}: "))
+            try:
+                # Convert user input into a symbolic expression for position function
+                position_function = sp.sympify(equation_str, locals={'t': t})
+            except AttributeError as e:
+                # Handle errors in parsing the position function
+                raise ValueError("Error in parsing the position function. Please check your input.") from e
+            intervals.append((position_function, start_time, end_time))
+
+    elif mode == 'acceleration':
+        # User inputs acceleration functions for different phases
+        num_phases = int(input("Enter the number of acceleration phases: "))
+        velocity = float(input("Enter the initial velocity: "))
+        position = float(input("Enter the initial position: "))
+        total_time = 0  # Initialize total time
+        for i in range(num_phases):
+            equation_str = input(f"Enter the acceleration for phase {i + 1} (e.g., 10 for constant acceleration or 3*t for function of time): ")
+            try:
+                # Convert user input into a symbolic expression for acceleration
+                acceleration = sp.sympify(equation_str, locals={'t': t})
+            except AttributeError as e:
+                raise ValueError("Error in parsing the acceleration. Please check your input.") from e
+
+            duration_input = input(f"Enter the duration for phase {i + 1} (in seconds or 't' if unknown): ").strip()
+
+            if duration_input.lower() == 't':
+                # Handle unknown durations by solving for time using kinematics
+                if i == num_phases - 1:
+                    final_velocity = float(input("Enter the final velocity (if known) or 0 to stop: "))
+                    if final_velocity == 0:
+                        duration = sp.Symbol('t')
+                        eq = sp.Eq(velocity + sp.integrate(acceleration, (t, 0, duration)), 0)
+                        duration_solution = sp.solve(eq, duration)
+                    else:
+                        duration = sp.Symbol('t')
+                        eq = sp.Eq(velocity + sp.integrate(acceleration, (t, 0, duration)), final_velocity)
+                        duration_solution = sp.solve(eq, duration)
+                    if duration_solution:
+                        duration = float(duration_solution[0].evalf())
+                    else:
+                        print("Unable to solve for duration.")
+                        return []
+                else:
+                    print("Duration must be specified for intermediate phases.")
+                    return []
+            else:
+                # Convert duration input to a float value
+                duration = float(duration_input)
+
+            start_time = total_time
+            total_time += duration  # Update total time with the duration of the phase
+
+            # Calculate velocity and position functions for the phase
+            velocity_func = velocity + sp.integrate(acceleration, (t, 0, t))
+            position_func = position + sp.integrate(velocity_func, (t, 0, t))
+
+            # Update velocity and position for the next phase
+            velocity += sp.integrate(acceleration, (t, 0, duration))
+            position += sp.integrate(velocity_func, (t, 0, duration))
+
+            intervals.append((position_func.subs(t, t - start_time), start_time, total_time))
+
+    elif mode == 'vs-as':
+        # Handle v-s and a-s scenarios for motion analysis
+        num_intervals = int(input("Enter the number of intervals: "))
+        for i in range(num_intervals):
+            scenario = input(f"Is it a v-s (velocity-displacement) or a-s (acceleration-displacement) scenario for interval {i + 1}? (v-s/a-s): ").strip().lower()
+
+            if scenario == 'v-s':
+                equation_str = input(f"Enter the velocity function v(s) for interval {i + 1} (e.g., 2*s + 1): ")
+                velocity_function = sp.sympify(equation_str, locals={'s': s})
+
+                # Calculate acceleration as a(s) = v * dv/ds
+                acceleration_function = velocity_function * sp.diff(velocity_function, s)
+                print(f"Derived Acceleration Function for interval {i + 1}: a(s) = {acceleration_function}")
+
+                # Get start and end positions
+                start_position = float(input(f"Enter the start position for interval {i + 1}: "))
+                end_position = float(input(f"Enter the end position for interval {i + 1}: "))
+                time_function = sp.integrate(1 / velocity_function, (s, start_position, end_position))
+                print(f"Time to travel from {start_position} to {end_position} for interval {i + 1}: {time_function} seconds")
+
+                intervals.append((velocity_function, acceleration_function, start_position, end_position))
+
+            elif scenario == 'a-s':
+                equation_str = input(f"Enter the acceleration function a(s) for interval {i + 1} (e.g., 3*s + 2): ")
+                acceleration_function = sp.sympify(equation_str, locals={'s': s})
+
+                # Calculate velocity from acceleration
+                start_velocity = float(input(f"Enter the initial velocity for interval {i + 1}: "))
+                velocity_function = sp.sqrt(start_velocity**2 + 2 * sp.integrate(acceleration_function, s))
+                print(f"Derived Velocity Function for interval {i + 1}: v(s) = {velocity_function}")
+
+                # Get start and end positions
+                start_position = float(input(f"Enter the start position for interval {i + 1}: "))
+                end_position = float(input(f"Enter the end position for interval {i + 1}: "))
+                time_function = sp.integrate(1 / velocity_function, (s, start_position, end_position))
+                print(f"Time to travel from {start_position} to {end_position} for interval {i + 1}: {time_function} seconds")
+
+                intervals.append((velocity_function, acceleration_function, start_position, end_position))
+
+    elif mode == 'velocity':
+        # User inputs velocity functions for specific time intervals
+        num_intervals = int(input("Enter the number of time intervals: "))
+        for i in range(num_intervals):
+            equation_str = input(f"Enter the velocity function v(t) for interval {i + 1} (e.g., 3*t**2 + 2*t + 1): ")
+            start_time = float(input(f"Enter the start time for interval {i + 1}: "))
+            end_time = float(input(f"Enter the end time for interval {i + 1}: "))
+            initial_position = float(input(f"Enter the initial position for interval {i + 1}: "))
+            try:
+                velocity_function = sp.sympify(equation_str, locals={'t': t})
+            except AttributeError as e:
+                raise ValueError("Error in parsing the velocity function. Please check your input.") from e
+
+            # Calculate position and acceleration functions
+            position_function = initial_position + sp.integrate(velocity_function, t)
+            acceleration_function = sp.diff(velocity_function, t)
+
+            print(f"Derived Position Function for interval {i + 1}: s(t) = {position_function}")
+            print(f"Derived Acceleration Function for interval {i + 1}: a(t) = {acceleration_function}")
+
+            intervals.append((velocity_function, position_function, acceleration_function, start_time, end_time))
+
+    return intervals, mode
+
+# Function to calculate velocity and acceleration functions from the position function
+def calculate_derived_functions(position_function):
+    velocity_function = sp.diff(position_function, t)  # Velocity is the first derivative of position
+    acceleration_function = sp.diff(velocity_function, t)  # Acceleration is the second derivative of position
+
+    print("\nDerived Functions:")
+    print(f"s(t) = {position_function}")
+    print(f"v(t) = {velocity_function}")
+    print(f"a(t) = {acceleration_function}")
+
+    return velocity_function, acceleration_function
+
+# Function to handle constant functions for velocity and acceleration
+def handle_constant_functions(func, time_values):
+    if func.is_constant():
+        return np.full(time_values.shape, float(func))  # Return a constant array if the function is constant
+    else:
+        func_lambdified = sp.lambdify(t, func, 'numpy')
+        return func_lambdified(time_values)  # Return evaluated function values for the given time range
+
+# Function to handle constant position functions
+def handle_constant_position(position_function, time_values):
+    if position_function.is_constant():
+        return np.full(time_values.shape, float(position_function))
+    else:
+        position_func = sp.lambdify(t, position_function, 'numpy')
+        return position_func(time_values)  # Evaluate the position function over the time range
+
+# Function to plot graphs based on the input mode
+def plot_graphs(intervals, mode):
+    if not intervals:
+        print("No valid intervals to plot.")
+        return
+
+    if mode in ['position', 'acceleration', 'velocity']:
+        combined_time_values = np.array([])
+        combined_position_values = np.array([])
+        combined_velocity_values = np.array([])
+        combined_acceleration_values = np.array([])
+
+        for interval in intervals:
+            if mode == 'velocity':
+                velocity_function, position_function, acceleration_function, start_time, end_time = interval
+            else:
+                position_function, start_time, end_time = interval
+                velocity_function, acceleration_function = calculate_derived_functions(position_function)
+
+            time_values = np.linspace(start_time, end_time, 1000)  # Generate time values for the interval
+            position_values = handle_constant_position(position_function, time_values)
+            velocity_values = handle_constant_functions(velocity_function, time_values)
+            acceleration_values = handle_constant_functions(acceleration_function, time_values)
+
+            combined_time_values = np.concatenate((combined_time_values, time_values))
+            combined_position_values = np.concatenate((combined_position_values, position_values))
+            combined_velocity_values = np.concatenate((combined_velocity_values, velocity_values))
+            combined_acceleration_values = np.concatenate((combined_acceleration_values, acceleration_values))
+
+        # Plot all graphs in one figure with 3 rows
+        fig, axs = plt.subplots(3, 1, figsize=(6, 6), sharex=True)
+
+        # Position-Time graph
+        axs[0].plot(combined_time_values, combined_position_values, color='blue', label='Position s(t)')
+        axs[0].fill_between(combined_time_values, combined_position_values, alpha=0.1, color='blue')
+        axs[0].set_ylabel('Position s(t)')
+        axs[0].legend()
+        axs[0].grid(True)
+
+        # Velocity-Time graph
+        axs[1].plot(combined_time_values, combined_velocity_values, color='orange', label='Velocity v(t)')
+        axs[1].fill_between(combined_time_values, combined_velocity_values, alpha=0.1, color='orange')
+        axs[1].set_ylabel('Velocity v(t)')
+        axs[1].legend()
+        axs[1].grid(True)
+
+        # Acceleration-Time graph
+        axs[2].plot(combined_time_values, combined_acceleration_values, color='green', label='Acceleration a(t)')
+        axs[2].fill_between(combined_time_values, combined_acceleration_values, alpha=0.1, color='green')
+        axs[2].set_xlabel('Time (t)')
+        axs[2].set_ylabel('Acceleration a(t)')
+        axs[2].legend()
+        axs[2].grid(True)
+
+        plt.tight_layout()
+        plt.show()
+
+    elif mode == 'vs-as':
+        combined_displacement_values = np.array([])
+        combined_velocity_values = np.array([])
+        combined_acceleration_values = np.array([])
+
+        for interval in intervals:
+            velocity_function, acceleration_function, start_position, end_position = interval
+            displacement_values = np.linspace(start_position, end_position, 1000)
+            velocity_func = sp.lambdify(s, velocity_function, 'numpy')
+            acceleration_func = sp.lambdify(s, acceleration_function, 'numpy')
+            velocity_values = np.atleast_1d(velocity_func(displacement_values))
+            acceleration_values = np.atleast_1d(acceleration_func(displacement_values))
+
+            min_len = min(len(displacement_values), len(velocity_values), len(acceleration_values))
+            combined_displacement_values = np.concatenate((combined_displacement_values, displacement_values[:min_len]))
+            combined_velocity_values = np.concatenate((combined_velocity_values, velocity_values[:min_len]))
+            combined_acceleration_values = np.concatenate((combined_acceleration_values, acceleration_values[:min_len]))
+
+        # Correct any flipped plots
+        combined_velocity_values = np.abs(combined_velocity_values)
+        combined_acceleration_values = np.abs(combined_acceleration_values)
+
+        # Plot v-s and a-s graphs in one figure with 2 rows
+        fig, axs = plt.subplots(2, 1, figsize=(6, 6), sharex=True)
+
+        # Velocity-Displacement graph
+        axs[0].plot(combined_displacement_values, combined_velocity_values, color='orange', label='Velocity v(s)')
+        axs[0].fill_between(combined_displacement_values, combined_velocity_values, alpha=0.1, color='orange')
+        axs[0].set_ylabel('Velocity v(s)')
+        axs[0].legend()
+        axs[0].grid(True)
+
+        # Acceleration-Displacement graph
+        axs[1].plot(combined_displacement_values, combined_acceleration_values, color='green', label='Acceleration a(s)')
+        axs[1].fill_between(combined_displacement_values, combined_acceleration_values, alpha=0.1, color='green')
+        axs[1].set_xlabel('Displacement (s)')
+        axs[1].set_ylabel('Acceleration a(s)')
+        axs[1].legend()
+        axs[1].grid(True)
+
+        plt.tight_layout()
+        plt.show()
+
+# Main program flow
+intervals, mode = get_motion_data()
+plot_graphs(intervals, mode)
